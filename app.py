@@ -1,11 +1,9 @@
-from flask import Flask, request, jsonify
 import sqlite3
-import jwt
-from werkzeug.security import check_password_hash, generate_password_hash
+from flask import Flask, request, jsonify
+from jose import jwt
 
 app = Flask(__name__)
 
-SECRET_KEY = "a_key"  # You can replace this with any secret key
 @app.route('/token', methods=['POST'])
 def get_token():
     service_account_number = request.json.get('service_account_number')
@@ -13,13 +11,21 @@ def get_token():
         return jsonify({"msg": "Service Account Number is required"}), 400
 
     # validate the service account number
-    # this is a placeholder, replace it with your own validation logic
-    if service_account_number != 'valid_service_account_number':
+    conn = sqlite3.connect('terminals.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM service_accounts WHERE service_account_number = ?', (service_account_number,))
+    account = c.fetchone()
+    conn.close()
+
+    if not account:
         return jsonify({"msg": "Invalid Service Account Number"}), 401
 
     # if validation passes, create a token and return it
-    token = jwt.encode({"service_account_number": service_account_number}, SECRET_KEY, algorithm="HS256")
+    # use the secret from the service_accounts table to sign the token
+    secret_key = account[1]  # Assuming secret is the second field in the table
+    token = jwt.encode({"service_account_number": service_account_number}, secret_key, algorithm="HS256")
     return jsonify({"token": token})
+
 
 @app.route('/terminals', methods=['GET'])
 def get_terminals():
@@ -34,11 +40,22 @@ def get_terminals():
     token = token_parts[1]
 
     # validate the token
-    try:
-        jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    except jwt.InvalidTokenError:
-        return jsonify({"msg": "Invalid token"}), 401
+    # first, we need to fetch the associated secret_key
+    unverified_claims = jwt.get_unverified_claims(token)
+    service_account_number = unverified_claims.get("service_account_number")
+    conn = sqlite3.connect('terminals.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM service_accounts WHERE service_account_number = ?', (service_account_number,))
+    account = c.fetchone()
+    if not account:
+        return jsonify({"msg": "Invalid Service Account Number"}), 401
 
+    secret_key = account[1]  # Assuming secret is the second field in the table
+
+    try:
+        jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.JWTError:
+        return jsonify({"msg": "Invalid token"}), 401
 
     # if token is valid, fetch all terminals and return them
     conn = sqlite3.connect('terminals.db')
@@ -52,4 +69,3 @@ def get_terminals():
 if __name__ == '__main__':
     app.debug = True
     app.run(port=5000)
-
