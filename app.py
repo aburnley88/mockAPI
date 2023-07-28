@@ -61,7 +61,8 @@ def get_terminals():
     conn = sqlite3.connect('terminals.db')
     c = conn.cursor()
     c.execute('SELECT * FROM terminals')
-    terminals = c.fetchall()
+    terminals = [dict((c.description[i][0], value) \
+               for i, value in enumerate(row)) for row in c.fetchall()]
     conn.close()
 
     return jsonify({"terminals": terminals})
